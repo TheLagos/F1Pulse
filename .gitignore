@@ -150,3 +150,6 @@ $RECYCLE.BIN/
 
 #Cache
 /.cache/
+
+#Clangd
+.clangd
