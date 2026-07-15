@@ -3,7 +3,7 @@ project(F1Pulse CXX C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(GGML_CUDA ON CACHE BOOL "Build with CUDA support" FORCE)
+set(GGML_CUDA OFF CACHE BOOL "Build with CUDA support" FORCE)
 
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Build llama.cpp examples" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Build llama.cpp tests" FORCE)
@@ -15,12 +15,16 @@ set(SOURCES
     src/main.cpp
     src/math/VectorMath.cpp
     src/storage/Database.cpp
+    src/ai/LlamaEngine.cpp
 )
 
 add_executable(f1_pulse ${SOURCES})
 
-target_include_directories(f1_pulse PRIVATE src)
+target_include_directories(f1_pulse PRIVATE 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp/include"
+)
 
-target_link_libraries(f1_pulse PRIVATE llama)
+target_link_libraries(f1_pulse PRIVATE llama ggml)
 
 target_compile_features(f1_pulse PRIVATE cxx_std_20)

@@ -19,7 +19,7 @@ namespace f1_pulse::ai {
         virtual ~IAIEngine() = default;
 
         /// @brief
-        virtual auto initialize(const EngineConfig& config) -> bool = 0;
+        virtual auto init(const EngineConfig& config) -> bool = 0;
 
         /// @brief
         virtual auto embed(const std::string& data) -> std::vector<float> = 0;
