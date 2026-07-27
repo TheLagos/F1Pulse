@@ -136,7 +136,7 @@ namespace f1_pulse::ai
         int32_t tokens_count = llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), nullptr, 0, true, false) * -1;
 
         std::vector<llama_token> tokens(tokens_count);
-        llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), tokens.data(), 0, true, false);
+        llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), tokens.data(), tokens.size(), true, false);
 
         // batching
 

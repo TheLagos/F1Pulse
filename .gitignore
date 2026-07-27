@@ -153,3 +153,6 @@ $RECYCLE.BIN/
 
 #Clangd
 .clangd
+
+# AI GGUF File
+/model/
