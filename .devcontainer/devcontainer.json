@@ -1,0 +1,21 @@
+{
+    "name": "F1Pulse Dev Container",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        "--net=host",
+        "-e", "DISPLAY=${env:DISPLAY}",
+        "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "llvm-vs-code-extensions.vscode-clangd",
+                "ms-vscode.cmake-tools",
+                "tamasfe.even-better-toml"
+            ]
+        }
+    },
+    "remoteUser": "ubuntu"
+}
