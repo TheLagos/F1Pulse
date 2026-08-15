@@ -3,11 +3,12 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <filesystem>
 
 namespace f1_pulse::ai {
     /// @brief
     struct EngineConfig {
-        std::string model_path;
+        std::filesystem::path model_path;
         uint32_t context_size;
         int32_t gpu_layers;
     };

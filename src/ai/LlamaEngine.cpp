@@ -3,62 +3,74 @@
 
 #include <algorithm>
 #include <iostream>
-#include <memory>
+#include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace f1_pulse::ai 
 {
-    LlamaEngine::~LlamaEngine() 
+    void ModelCleaner::operator() (llama_model* model) const noexcept
     {
-        if (m_context)
+        if(model)
         {
-            llama_free(m_context);
+            llama_model_free(model);
         }
+    }
 
-        if (m_model)
+    void ContextCleaner::operator() (llama_context* context) const noexcept
+    {
+        if(context)
         {
-            llama_model_free(m_model);
+            llama_free(context);
         }
     }
 
     auto LlamaEngine::init(const EngineConfig& config) -> bool {
 
-        if (m_model || m_context)
+        if (is_ready())
         {
-            std::cerr << "Error: Model is already initialized!" << '\n';
-            return false;
+            throw std::logic_error("LlamaEngine is already initialized!");
+        }
+
+        std::filesystem::path model_path(config.model_path);
+        if (model_path.empty())
+        {
+            throw std::runtime_error("Model path is empty!");
+        }
+
+        auto path = std::filesystem::weakly_canonical(model_path);
+        if (!std::filesystem::is_regular_file(path))
+        {
+            throw std::runtime_error("Model file not found or it's not a regular file: " + path.string());
         }
 
         static bool backend_init = []() {
             llama_backend_init();
             return true;
         }();
+        (void)backend_init;
 
         auto model_params = llama_model_default_params();
         model_params.n_gpu_layers = (config.gpu_layers >= 0) ? config.gpu_layers : -1;
 
-        auto model = llama_model_load_from_file(config.model_path.c_str(), model_params);
-        if (model == nullptr)
+        unique_model_ptr model(llama_model_load_from_file(path.string().c_str(), model_params));
+        if (!model)
         {
-            std::cerr << "Error: Cannot initialize the model!" << '\n';
-            return false;
+            throw std::runtime_error("Failed to load GGUF model from: " + path.string());
         }
 
         auto context_params = llama_context_default_params();
         context_params.n_ctx = config.context_size;
-        context_params.embeddings = true;
+        //context_params.embeddings = true;
 
-        auto context = llama_init_from_model(model, context_params);
-        if (context == nullptr)
+        unique_context_ptr context(llama_init_from_model(model.get(), context_params));
+        if (!context)
         {
-            std::cerr << "Error: Cannot initialize the model's context!" << '\n';
-            llama_model_free(model);
-            return false;
+            throw std::runtime_error("Failed to create llama_context for model: " + resolved_path.string());
         }
-        
-        m_model = model;
-        m_context = context;
+
+        m_model = std::move(model);
+        m_context = std::move(context);
+        m_config = config;
 
         return true;
     }
@@ -66,8 +78,13 @@ namespace f1_pulse::ai
     auto LlamaEngine::embed(const std::string& data) -> std::vector<float> {
         if (data.empty())
         {
-             std::cerr << "Embed error: The data is empty!" << '\n';
-             return {};
+            std::cerr << "Embed error: The data is empty!" << '\n';
+            return {};
+        }
+
+        if (!this->is_ready())
+        {
+            throw 
         }
         
         llama_memory_clear(llama_get_memory(m_context), true);
