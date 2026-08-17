@@ -30,13 +30,15 @@ namespace f1_pulse::ai {
         LlamaEngine& operator=(LlamaEngine&&) noexcept = default;
 
         auto init(const EngineConfig& config) -> bool override;
-        auto embed(const std::string& data) -> std::vector<float> override;
-        auto infer(const std::string& prompt) -> std::string override;
+        auto embed(std::string_view data) -> std::vector<float> override;
+        auto infer(std::string_view prompt, const SamplingParams& params = {}) -> std::string override;
         auto is_ready() const noexcept -> bool override;
 
     private:
+        auto tokenize(std::string_view text, bool add_special = true) comst -> std::vector<llama_token>;
+
         unique_model_ptr m_model;
         unique_context_ptr m_context;
-        EngineConfig m_config;
+        EngineConfig m_config{};
     };
 } //namespace f1_pulse::ai
