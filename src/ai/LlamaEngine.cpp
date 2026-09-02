@@ -2,6 +2,7 @@
 #include "llama.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,20 @@ namespace f1_pulse::ai
         }
     }
 
+    auto LlamaEngine::tokenize(std::string_view text, bool add_special) const -> std::vector<llama_token>
+    {
+        if (is_ready())
+        {
+            auto vocab = llama_model_get_vocab(m_model);
+            int32_t tokens_count = llama_tokenize(vocab, text, static_cast<int32_t>(text.size()), nullptr, 0, true, false) * -1;
+
+            std::vector<llama_token> tokens(tokens_count);
+            llama_tokenize(vocab, text, static_cast<int32_t>(text.size()), tokens.data(), tokens.size(), true, false);
+            
+            return tokens;
+        }
+    }
+
     auto LlamaEngine::init(const EngineConfig& config) -> bool {
 
         if (is_ready())
@@ -31,16 +46,14 @@ namespace f1_pulse::ai
             throw std::logic_error("LlamaEngine is already initialized!");
         }
 
-        std::filesystem::path model_path(config.model_path);
-        if (model_path.empty())
+        if (config.model_path.empty())
         {
             throw std::runtime_error("Model path is empty!");
         }
 
-        auto path = std::filesystem::weakly_canonical(model_path);
-        if (!std::filesystem::is_regular_file(path))
+        if (!std::filesystem::exists(config.model_path))
         {
-            throw std::runtime_error("Model file not found or it's not a regular file: " + path.string());
+            throw std::runtime_error("Model file not found or it's not a regular file: " + config.model_path.string());
         }
 
         static bool backend_init = []() {
@@ -52,20 +65,19 @@ namespace f1_pulse::ai
         auto model_params = llama_model_default_params();
         model_params.n_gpu_layers = (config.gpu_layers >= 0) ? config.gpu_layers : -1;
 
-        unique_model_ptr model(llama_model_load_from_file(path.string().c_str(), model_params));
+        unique_model_ptr model(llama_model_load_from_file(config.model_path.string().c_str(), model_params));
         if (!model)
         {
-            throw std::runtime_error("Failed to load GGUF model from: " + path.string());
+            throw std::runtime_error("Failed to load GGUF model from: " + config.model_path.string());
         }
 
         auto context_params = llama_context_default_params();
         context_params.n_ctx = config.context_size;
-        //context_params.embeddings = true;
 
         unique_context_ptr context(llama_init_from_model(model.get(), context_params));
         if (!context)
         {
-            throw std::runtime_error("Failed to create llama_context for model: " + resolved_path.string());
+            throw std::runtime_error("Failed to create llama_context for model: " + config.model_path.string());
         }
 
         m_model = std::move(model);

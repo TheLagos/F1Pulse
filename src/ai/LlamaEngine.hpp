@@ -5,6 +5,7 @@
 
 struct llama_model;
 struct llama_context;
+using llama_token = int32_t;
 
 namespace f1_pulse::ai {
     struct ModelCleaner {
@@ -35,10 +36,12 @@ namespace f1_pulse::ai {
         auto is_ready() const noexcept -> bool override;
 
     private:
-        auto tokenize(std::string_view text, bool add_special = true) comst -> std::vector<llama_token>;
+        auto tokenize(std::string_view text, bool add_special = true) const -> std::vector<llama_token>;
 
         unique_model_ptr m_model;
         unique_context_ptr m_context;
+
         EngineConfig m_config{};
+        SamplingParams m_params{};
     };
 } //namespace f1_pulse::ai
