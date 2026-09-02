@@ -27,33 +27,50 @@ namespace f1_pulse::ai
 
     auto LlamaEngine::tokenize(std::string_view text, bool add_special) const -> std::vector<llama_token>
     {
-        if (is_ready())
+        if (!is_ready() || text.empty())
         {
-            auto vocab = llama_model_get_vocab(m_model);
-            int32_t tokens_count = llama_tokenize(vocab, text, static_cast<int32_t>(text.size()), nullptr, 0, true, false) * -1;
-
-            std::vector<llama_token> tokens(tokens_count);
-            llama_tokenize(vocab, text, static_cast<int32_t>(text.size()), tokens.data(), tokens.size(), true, false);
-            
-            return tokens;
+            return {};
         }
+
+        const auto* vocab = llama_model_get_vocab(m_model.get());
+        const auto text_size = static_cast<int32_t>(text.size());
+
+        int32_t tokens_count = llama_tokenize(vocab, text.data(), text_size, nullptr, 0, add_special, false) * -1;
+
+        if (tokens_count <= 0)
+        {
+            return {};
+        }
+
+        std::vector<llama_token> tokens(tokens_count);
+        int32_t result = llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, false);
+
+        if (result < 0)
+        {
+            return {};
+        }
+
+        return tokens;
     }
 
     auto LlamaEngine::init(const EngineConfig& config) -> bool {
 
         if (is_ready())
         {
-            throw std::logic_error("LlamaEngine is already initialized!");
+            std::cerr << "LlamaEngine is already initialized!\n";
+            return false;
         }
 
         if (config.model_path.empty())
         {
-            throw std::runtime_error("Model path is empty!");
+            std::cerr << "Model path is empty!\n";
+            return false;
         }
 
-        if (!std::filesystem::exists(config.model_path))
+        if (!std::filesystem::is_regular_file(config.model_path))
         {
-            throw std::runtime_error("Model file not found or it's not a regular file: " + config.model_path.string());
+            std::cerr << "Model file not found or it's not a regular file: " << config.model_path.string() << '\n';
+            return false;
         }
 
         static bool backend_init = []() {
@@ -62,22 +79,39 @@ namespace f1_pulse::ai
         }();
         (void)backend_init;
 
+        // params uploading
+
         auto model_params = llama_model_default_params();
-        model_params.n_gpu_layers = (config.gpu_layers >= 0) ? config.gpu_layers : -1;
+        model_params.n_gpu_layers = config.gpu_layers;
 
         unique_model_ptr model(llama_model_load_from_file(config.model_path.string().c_str(), model_params));
         if (!model)
         {
-            throw std::runtime_error("Failed to load GGUF model from: " + config.model_path.string());
+            std::cerr << "Failed to load GGUF model from: " << config.model_path.string() << '\n';
+            return false;
         }
 
+        // KV-cache calculating
+
+        const auto train_ctx = llama_model_n_ctx_train(model.get());
+        const auto ctx = (config.context_size == 0) ? train_ctx : std::min(config.context_size, train_ctx);
+
+        // context params setting
+
         auto context_params = llama_context_default_params();
-        context_params.n_ctx = config.context_size;
+        context_params.n_ctx = ctx;
+        context_params.embedding = config.enable_embeddings;
+
+        const auto threads = (config.threads > 0) ? config.threads : 4;
+        context_params.n_threads = threads;
+
+        // context creating
 
         unique_context_ptr context(llama_init_from_model(model.get(), context_params));
         if (!context)
         {
-            throw std::runtime_error("Failed to create llama_context for model: " + config.model_path.string());
+            std::cerr << "Failed to create llama_context for model: " << config.model_path.string() << '\n';
+            return false;
         }
 
         m_model = std::move(model);
