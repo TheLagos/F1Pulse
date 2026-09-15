@@ -4,8 +4,34 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
+
+namespace 
+{
+    /// @brief Returns the offset in `text` where the earliest matching stop
+    /// sequence begins, or std::nullopt if none of `stop_sequences` occur yet.
+    auto find_stop_sequence(std::string_view text, const std::vector<std::string>& stop_sequences) -> std::optional<size_t>
+    {
+        std::optional<size_t> earliest;
+
+        for (const auto& stop : stop_sequences)
+        {
+            if (stop.empty())
+            {
+                continue;
+            }
+
+            if (const auto pos = text.find(stop); pos != std::string_view::npos)
+            {
+                earliest = earliest ? std::min(*earliest, pos) : pos;
+            }
+        }
+
+        return earliest;
+    }
+} // namespace
 
 namespace f1_pulse::ai 
 {
@@ -204,8 +230,6 @@ namespace f1_pulse::ai
     }
 
     auto LlamaEngine::infer(std::string_view prompt, const SamplingParams& params) -> std::string {
-        (void)params; // TODO: wired up in a follow-up commit
-
         if (prompt.empty())
         {
             std::cerr << "Infer error: The prompt cannot be empty!" << '\n';
@@ -247,15 +271,16 @@ namespace f1_pulse::ai
         llama_sampler* raw_sampler = llama_sampler_chain_init(chain_params);
         safe_sampler_ptr sampler(raw_sampler, llama_sampler_free);
 
+        // repetition penalty is an implementation detail, not exposed via SamplingParams
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_penalties(64, 1.1f, 0.0f, 0.0f));
-        llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_k(20));
-        llama_sampler_chain_add(sampler.get(), llama_sampler_init_temp(0.35f));
-        llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_p(0.7f, 1));
+        llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_k(params.top_k));
+        llama_sampler_chain_add(sampler.get(), llama_sampler_init_temp(params.temperature));
+        llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_p(params.top_p, 1));
         llama_sampler_chain_add(sampler.get(), llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
         // answer generation
 
-        int32_t max_tokens_in_answer = 1000;
+        const int32_t max_tokens_in_answer = static_cast<int32_t>(params.max_tokens);
         int32_t generated_tokens_count = 0;
         int32_t generated_token_position = tokens_count;
 
@@ -279,9 +304,13 @@ namespace f1_pulse::ai
 
             if(bytes > 0)
             {
-                std::string_view word(buffer.data(), bytes);
-                std::cout << word;
-                answer.append(word);
+                answer.append(buffer.data(), bytes);
+            }
+
+            if (const auto stop_at = find_stop_sequence(answer, params.stop_sequences))
+            {
+                answer.erase(*stop_at);
+                break;
             }
 
             if (!decode_tokens({token}, generated_token_position))

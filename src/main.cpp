@@ -29,9 +29,8 @@ int main() {
             break;
         }
 
-        std::cout << "/nRookie >>";
-        engine.infer(prompt);
-        std::cout << std::endl;
+        std::cout << "\nRookie >> ";
+        std::cout << engine.infer(prompt) << std::endl;
     }
 
     return 0;
