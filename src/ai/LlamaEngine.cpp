@@ -93,14 +93,14 @@ namespace f1_pulse::ai
 
         // KV-cache calculating
 
-        const auto train_ctx = llama_model_n_ctx_train(model.get());
+        const auto train_ctx = static_cast<uint32_t>(llama_model_n_ctx_train(model.get()));
         const auto ctx = (config.context_size == 0) ? train_ctx : std::min(config.context_size, train_ctx);
 
         // context params setting
 
         auto context_params = llama_context_default_params();
         context_params.n_ctx = ctx;
-        context_params.embedding = config.enable_embeddings;
+        context_params.embeddings = config.enable_embeddings;
 
         const auto threads = (config.threads > 0) ? config.threads : 4;
         context_params.n_threads = threads;
@@ -121,32 +121,36 @@ namespace f1_pulse::ai
         return true;
     }
 
-    auto LlamaEngine::embed(const std::string& data) -> std::vector<float> {
+    auto LlamaEngine::embed(std::string_view data) -> std::vector<float> {
         if (data.empty())
         {
             std::cerr << "Embed error: The data is empty!" << '\n';
             return {};
         }
 
-        if (!this->is_ready())
+        if (!is_ready())
         {
-            throw 
+            std::cerr << "Embed error: The engine is not initialized!" << '\n';
+            return {};
         }
-        
-        llama_memory_clear(llama_get_memory(m_context), true);
+
+        llama_memory_clear(llama_get_memory(m_context.get()), true);
 
         // tokenization
 
-        auto vocab = llama_model_get_vocab(m_model);
-        // ckecks buffer size and makes it positive
-        int32_t tokens_count = llama_tokenize(vocab, data.c_str(), static_cast<int32_t>(data.length()), nullptr, 0, true, false) * -1;
+        const auto* vocab = llama_model_get_vocab(m_model.get());
+        std::vector<llama_token> tokens = tokenize(data, true);
+        const auto tokens_count = static_cast<int32_t>(tokens.size());
 
-        std::vector<llama_token> tokens(tokens_count);
-        llama_tokenize(vocab, data.c_str(), static_cast<int32_t>(data.length()), tokens.data(), tokens.size(), true, false);
+        if (tokens_count <= 0)
+        {
+            std::cerr << "Embed error: Failed to tokenize the input data!" << '\n';
+            return {};
+        }
 
         // batching
 
-        auto batch = llama_batch_init(tokens.size(), 0, 1);
+        auto batch = llama_batch_init(tokens_count, 0, 1);
         batch.n_tokens = tokens_count;
 
         for (int i = 0; i < tokens_count; ++i)
@@ -160,7 +164,7 @@ namespace f1_pulse::ai
 
         // embedding
 
-        int32_t decode_status = llama_decode(m_context, batch);
+        int32_t decode_status = llama_decode(m_context.get(), batch);
         if(decode_status != 0)
         {
             std::cerr << "Embed error: Cannot decode the batch, error code - " << decode_status << "!" << '\n';
@@ -168,10 +172,10 @@ namespace f1_pulse::ai
             return {};
         }
 
-        int32_t embedding_dim = llama_model_n_embd(m_model);
+        int32_t embedding_dim = llama_model_n_embd(m_model.get());
         std::vector<float> embedding(embedding_dim);
 
-        auto last_embedding = llama_get_embeddings_ith(m_context, tokens_count - 1);
+        auto last_embedding = llama_get_embeddings_ith(m_context.get(), tokens_count - 1);
         if (last_embedding == nullptr)
         {
             std::cerr << "Embed error: Cannot get the embedding!" << '\n';
@@ -184,22 +188,34 @@ namespace f1_pulse::ai
         return embedding;
     }
 
-    auto LlamaEngine::infer(const std::string& prompt) -> std::string {
+    auto LlamaEngine::infer(std::string_view prompt, const SamplingParams& params) -> std::string {
+        (void)params; // TODO: wired up in a follow-up commit
+
         if (prompt.empty())
         {
             std::cerr << "Infer error: The prompt cannot be empty!" << '\n';
             return {};
         }
 
-        llama_memory_clear(llama_get_memory(m_context), true);
+        if (!is_ready())
+        {
+            std::cerr << "Infer error: The engine is not initialized!" << '\n';
+            return {};
+        }
+
+        llama_memory_clear(llama_get_memory(m_context.get()), true);
 
         // tokenization
 
-        auto vocab = llama_model_get_vocab(m_model);
-        int32_t tokens_count = llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), nullptr, 0, true, false) * -1;
+        const auto* vocab = llama_model_get_vocab(m_model.get());
+        std::vector<llama_token> tokens = tokenize(prompt, true);
+        const auto tokens_count = static_cast<int32_t>(tokens.size());
 
-        std::vector<llama_token> tokens(tokens_count);
-        llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), tokens.data(), tokens.size(), true, false);
+        if (tokens_count <= 0)
+        {
+            std::cerr << "Infer error: Failed to tokenize the prompt!" << '\n';
+            return {};
+        }
 
         // batching
 
@@ -216,10 +232,10 @@ namespace f1_pulse::ai
 
         // prefill
 
-        int32_t decode_status = llama_decode(m_context, batch);
+        int32_t decode_status = llama_decode(m_context.get(), batch);
         if (decode_status != 0) 
         {
-            std::cerr << "Embed error: Cannot decode the batch, error code - " << decode_status << "!" << '\n';
+            std::cerr << "Infer error: Cannot decode the batch, error code - " << decode_status << "!" << '\n';
             llama_batch_free(batch);
             return {};
         }
@@ -252,7 +268,7 @@ namespace f1_pulse::ai
         {
             // inference
 
-            llama_token token = llama_sampler_sample(sampler.get(), m_context, -1);
+            llama_token token = llama_sampler_sample(sampler.get(), m_context.get(), -1);
             llama_sampler_accept(sampler.get(), token);
 
             if (token == llama_vocab_eos(vocab))
@@ -260,7 +276,7 @@ namespace f1_pulse::ai
                 break;
             }
 
-            int32_t bytes = llama_token_to_piece(vocab, token, &buffer[0], sizeof(buffer), 0, true);
+            int32_t bytes = llama_token_to_piece(vocab, token, buffer.data(), static_cast<int32_t>(buffer.size()), 0, true);
 
             if(bytes > 0)
             {
@@ -277,7 +293,7 @@ namespace f1_pulse::ai
             batch.logits[0] = true;
             batch.n_tokens = 1;
 
-            llama_decode(m_context, batch);
+            llama_decode(m_context.get(), batch);
 
             generated_token_position++;
             generated_tokens_count++;
