@@ -117,6 +117,7 @@ namespace f1_pulse::ai
     }
 
     auto LlamaEngine::init(const EngineConfig& config) -> bool {
+        std::lock_guard<std::mutex> lock(m_mutex);
 
         if (is_ready())
         {
@@ -181,6 +182,11 @@ namespace f1_pulse::ai
         m_context = std::move(context);
         m_config = config;
 
+        // Published last, after m_model/m_context are fully assigned, so a concurrent
+        // is_ready() poll from another thread never observes "ready" with a partially
+        // constructed engine.
+        m_ready.store(true, std::memory_order_release);
+
         return true;
     }
 
@@ -196,6 +202,11 @@ namespace f1_pulse::ai
             std::cerr << "Embed error: The engine is not initialized!" << '\n';
             return {};
         }
+
+        // Serializes access to m_model/m_context: llama_context is not reentrant,
+        // so concurrent embed()/infer() calls from different threads must not
+        // interleave their llama_decode()/sampling calls on the same context.
+        std::lock_guard<std::mutex> lock(m_mutex);
 
         llama_memory_clear(llama_get_memory(m_context.get()), true);
 
@@ -241,6 +252,11 @@ namespace f1_pulse::ai
             std::cerr << "Infer error: The engine is not initialized!" << '\n';
             return {};
         }
+
+        // Serializes access to m_model/m_context: llama_context is not reentrant,
+        // so concurrent embed()/infer() calls from different threads must not
+        // interleave their llama_decode()/sampling calls on the same context.
+        std::lock_guard<std::mutex> lock(m_mutex);
 
         llama_memory_clear(llama_get_memory(m_context.get()), true);
 
@@ -327,6 +343,8 @@ namespace f1_pulse::ai
     }
 
     auto LlamaEngine::is_ready() const noexcept -> bool {
-        return (m_model) && (m_context);
+        // Lock-free on purpose: callers (e.g. a UI thread) must be able to poll
+        // readiness without blocking on a mutex an in-flight infer() is holding.
+        return m_ready.load(std::memory_order_acquire);
     }
 } //namespace f1_pulse::ai
