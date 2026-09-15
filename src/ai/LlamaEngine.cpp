@@ -53,6 +53,43 @@ namespace f1_pulse::ai
         return tokens;
     }
 
+    auto LlamaEngine::decode_tokens(const std::vector<llama_token>& tokens, int32_t start_pos) const -> bool
+    {
+        if (tokens.empty())
+        {
+            return false;
+        }
+
+        const auto n_tokens = static_cast<int32_t>(tokens.size());
+        auto batch = llama_batch_init(n_tokens, 0, 1);
+
+        // RAII guard so llama_batch_free() always runs, even on early return above/below.
+        struct BatchGuard
+        {
+            llama_batch& batch;
+            ~BatchGuard() { llama_batch_free(batch); }
+        } guard{batch};
+
+        for (int32_t i = 0; i < n_tokens; ++i)
+        {
+            batch.token[i] = tokens[i];
+            batch.pos[i] = start_pos + i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = (i == n_tokens - 1);
+        }
+        batch.n_tokens = n_tokens;
+
+        const int32_t decode_status = llama_decode(m_context.get(), batch);
+        if (decode_status != 0)
+        {
+            std::cerr << "Decode error: llama_decode failed, error code - " << decode_status << "!\n";
+            return false;
+        }
+
+        return true;
+    }
+
     auto LlamaEngine::init(const EngineConfig& config) -> bool {
 
         if (is_ready())
@@ -138,53 +175,31 @@ namespace f1_pulse::ai
 
         // tokenization
 
-        const auto* vocab = llama_model_get_vocab(m_model.get());
         std::vector<llama_token> tokens = tokenize(data, true);
-        const auto tokens_count = static_cast<int32_t>(tokens.size());
-
-        if (tokens_count <= 0)
+        if (tokens.empty())
         {
             std::cerr << "Embed error: Failed to tokenize the input data!" << '\n';
             return {};
         }
 
-        // batching
-
-        auto batch = llama_batch_init(tokens_count, 0, 1);
-        batch.n_tokens = tokens_count;
-
-        for (int i = 0; i < tokens_count; ++i)
-        {
-            batch.token[i] = tokens[i];
-            batch.pos[i] = i;
-            batch.n_seq_id[i] = 1;
-            batch.seq_id[i][0] = 0;
-            batch.logits[i] = (i == tokens_count - 1);
-        }
-
         // embedding
 
-        int32_t decode_status = llama_decode(m_context.get(), batch);
-        if(decode_status != 0)
+        if (!decode_tokens(tokens, 0))
         {
-            std::cerr << "Embed error: Cannot decode the batch, error code - " << decode_status << "!" << '\n';
-            llama_batch_free(batch);
             return {};
         }
 
-        int32_t embedding_dim = llama_model_n_embd(m_model.get());
+        const int32_t embedding_dim = llama_model_n_embd(m_model.get());
         std::vector<float> embedding(embedding_dim);
 
-        auto last_embedding = llama_get_embeddings_ith(m_context.get(), tokens_count - 1);
+        const auto* last_embedding = llama_get_embeddings_ith(m_context.get(), static_cast<int32_t>(tokens.size()) - 1);
         if (last_embedding == nullptr)
         {
             std::cerr << "Embed error: Cannot get the embedding!" << '\n';
-            llama_batch_free(batch);
             return {};
         }
         std::copy(last_embedding, last_embedding + embedding_dim, embedding.begin());
 
-        llama_batch_free(batch);
         return embedding;
     }
 
@@ -217,26 +232,10 @@ namespace f1_pulse::ai
             return {};
         }
 
-        // batching
-
-        auto batch = llama_batch_init(tokens_count, 0, 1);
-        batch.n_tokens = tokens_count;
-        for (int i = 0; i < tokens_count; ++i) 
-        {
-            batch.token[i] = tokens[i];
-            batch.pos[i] = i;
-            batch.n_seq_id[i] = 1;
-            batch.seq_id[i][0] = 0;
-            batch.logits[i] = (i == tokens_count - 1);
-        }
-
         // prefill
 
-        int32_t decode_status = llama_decode(m_context.get(), batch);
-        if (decode_status != 0) 
+        if (!decode_tokens(tokens, 0))
         {
-            std::cerr << "Infer error: Cannot decode the batch, error code - " << decode_status << "!" << '\n';
-            llama_batch_free(batch);
             return {};
         }
 
@@ -285,21 +284,16 @@ namespace f1_pulse::ai
                 answer.append(word);
             }
 
-            batch.n_tokens = 0;
-            batch.token[0] = token;
-            batch.pos[0] = generated_token_position;
-            batch.n_seq_id[0] = 1;
-            batch.seq_id[0][0] = 0;
-            batch.logits[0] = true;
-            batch.n_tokens = 1;
-
-            llama_decode(m_context.get(), batch);
+            if (!decode_tokens({token}, generated_token_position))
+            {
+                std::cerr << "Infer error: Cannot decode the generated token!" << '\n';
+                break;
+            }
 
             generated_token_position++;
             generated_tokens_count++;
         }
 
-        llama_batch_free(batch);
         return answer;
     }
 

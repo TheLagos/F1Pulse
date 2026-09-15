@@ -38,6 +38,12 @@ namespace f1_pulse::ai {
     private:
         auto tokenize(std::string_view text, bool add_special = true) const -> std::vector<llama_token>;
 
+        /// @brief Submits `tokens` to the context for decoding (prefill or a single
+        /// generation step), starting at KV-cache position `start_pos`. Only the
+        /// logits of the last token in the batch are requested. Owns and frees its
+        /// llama_batch internally (RAII), so it is safe to call on any error path.
+        auto decode_tokens(const std::vector<llama_token>& tokens, int32_t start_pos) const -> bool;
+
         unique_model_ptr m_model;
         unique_context_ptr m_context;
 
