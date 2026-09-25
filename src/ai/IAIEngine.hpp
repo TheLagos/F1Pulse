@@ -5,8 +5,25 @@
 #include <cstdint>
 #include <vector>
 #include <filesystem>
+#include <expected>
 
 namespace f1_pulse::ai {
+    /// @brief Identifies the category of failure returned by IAIEngine::init().
+    enum class EngineErrorCode
+    {
+        AlreadyInitialized,    ///< init() was called on an engine that is already initialized.
+        ModelPathFindFailed,   ///< The model file could not be located at the path specified in EngineConfig::model_path.
+        ModelLoadFailed,       ///< The model file was found but could not be loaded (corrupt, unsupported format, or insufficient memory).
+        ContextCreationFailed  ///< The backend failed to create a context with the requested parameters (e.g. context_size too large for available VRAM).
+    };
+
+    /// @brief Carries a machine-readable error category and a human-readable
+    /// description returned by IAIEngine::init() on failure.
+    struct EngineError{
+        EngineErrorCode code;
+        std::string message;
+    };
+
     /// @brief Configuration used to load and set up a model in IAIEngine::init().
     struct EngineConfig {
         std::filesystem::path model_path;  ///< Path to a local GGUF model file.
@@ -34,9 +51,11 @@ namespace f1_pulse::ai {
         virtual ~IAIEngine() = default;
 
         /// @brief Loads a model and prepares the engine for use according to `config`.
-        /// @return true on success; false if the model could not be loaded or the
-        /// engine was already initialized.
-        virtual auto init(const EngineConfig& config) -> bool = 0;
+        /// @param config Settings describing the model file, context size, GPU offload, and thread count.
+        /// @return An empty expected on success, or an EngineError describing the
+        /// failure (e.g. AlreadyInitialized, ModelPathFindFailed, ModelLoadFailed,
+        /// or ContextCreationFailed).
+        virtual auto init(const EngineConfig& config) -> std::expected<void, EngineError> = 0;
 
         /// @brief Computes an embedding vector for `data`.
         /// @return The embedding, or an empty vector on failure (e.g. engine not

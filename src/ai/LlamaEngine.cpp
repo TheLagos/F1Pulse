@@ -1,4 +1,5 @@
 #include "LlamaEngine.hpp"
+#include "IAIEngine.hpp"
 #include "llama.h"
 
 #include <algorithm>
@@ -35,6 +36,8 @@ namespace
 
 namespace f1_pulse::ai 
 {
+    using enum EngineErrorCode;
+
     void ModelCleaner::operator() (llama_model* model) const noexcept
     {
         if(model)
@@ -116,25 +119,31 @@ namespace f1_pulse::ai
         return true;
     }
 
-    auto LlamaEngine::init(const EngineConfig& config) -> bool {
+    auto LlamaEngine::init(const EngineConfig& config) -> std::expected<void, EngineError> {
         std::lock_guard<std::mutex> lock(m_mutex);
 
         if (is_ready())
         {
-            std::cerr << "LlamaEngine is already initialized!\n";
-            return false;
+            return std::unexpected(EngineError{
+                AlreadyInitialized, 
+                "LlamaEngine is already initialized!"
+            });
         }
 
         if (config.model_path.empty())
         {
-            std::cerr << "Model path is empty!\n";
-            return false;
+            return std::unexpected(EngineError{
+                ModelPathFindFailed, 
+                "Model path is empty!"
+            });
         }
 
         if (!std::filesystem::is_regular_file(config.model_path))
         {
-            std::cerr << "Model file not found or it's not a regular file: " << config.model_path.string() << '\n';
-            return false;
+            return std::unexpected(EngineError{
+                ModelPathFindFailed, 
+                "Model file not found or it's not a regular file!"
+            });
         }
 
         static bool backend_init = []() {
@@ -152,7 +161,10 @@ namespace f1_pulse::ai
         if (!model)
         {
             std::cerr << "Failed to load GGUF model from: " << config.model_path.string() << '\n';
-            return false;
+            return std::unexpected(EngineError{
+                ModelLoadFailed, 
+                "Failed to load GGUF model from " + config.model_path.string()
+            });
         }
 
         // KV-cache calculating
@@ -175,7 +187,10 @@ namespace f1_pulse::ai
         if (!context)
         {
             std::cerr << "Failed to create llama_context for model: " << config.model_path.string() << '\n';
-            return false;
+            return std::unexpected(EngineError{
+                ContextCreationFailed,
+                "Failed to create llama_context for model: " + config.model_path.string()
+            });
         }
 
         m_model = std::move(model);
@@ -187,7 +202,7 @@ namespace f1_pulse::ai
         // constructed engine.
         m_ready.store(true, std::memory_order_release);
 
-        return true;
+        return {};
     }
 
     auto LlamaEngine::embed(std::string_view data) -> std::vector<float> {

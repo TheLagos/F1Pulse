@@ -34,7 +34,7 @@ target_include_directories(f1_pulse PRIVATE
 
 target_link_libraries(f1_pulse PRIVATE llama ggml)
 
-target_compile_features(f1_pulse PRIVATE cxx_std_20)
+target_compile_features(f1_pulse PRIVATE cxx_std_23)
 
 if(MSVC)
     set_target_properties(f1_pulse PROPERTIES
