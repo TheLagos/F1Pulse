@@ -45,8 +45,8 @@ namespace f1_pulse::ai {
         LlamaEngine& operator=(LlamaEngine&&) = delete;
 
         auto init(const EngineConfig& config) -> std::expected<void, EngineError> override;
-        auto embed(std::string_view data) -> std::vector<float> override;
-        auto infer(std::string_view prompt, const SamplingParams& params = {}) -> std::string override;
+        auto embed(std::string_view data) -> std::expected<std::vector<float>, EngineError> override;
+        auto infer(std::string_view prompt, const CallbackFunction& callback, std::stop_token stoken, const SamplingParams& params) -> void override;
         auto is_ready() const noexcept -> bool override;
 
     private:
