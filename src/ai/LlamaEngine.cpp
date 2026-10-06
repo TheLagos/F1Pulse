@@ -205,17 +205,29 @@ namespace f1_pulse::ai
         return {};
     }
 
-    auto LlamaEngine::embed(std::string_view data) -> std::vector<float> {
+    auto LlamaEngine::embed(std::string_view data) -> std::expected<std::vector<float>, EngineError> {
         if (data.empty())
         {
-            std::cerr << "Embed error: The data is empty!" << '\n';
-            return {};
+            return std::unexpected(EngineError{
+                EmptyInput,
+                "Embed error: The input data is empty!"
+            });
         }
 
         if (!is_ready())
         {
-            std::cerr << "Embed error: The engine is not initialized!" << '\n';
-            return {};
+            return std::unexpected(EngineError{
+                NotInitialized,
+                "Embed error: The engine is not initialized!"
+            });
+        }
+
+        if (!m_config.enable_embeddings)
+        {
+            return std::unexpected(EngineError{
+                EmbeddingsDisabled,
+                "Embed error: Embeddings are disabled in the configuration!"
+            });
         }
 
         // Serializes access to m_model/m_context: llama_context is not reentrant,
@@ -230,25 +242,40 @@ namespace f1_pulse::ai
         std::vector<llama_token> tokens = tokenize(data, true);
         if (tokens.empty())
         {
-            std::cerr << "Embed error: Failed to tokenize the input data!" << '\n';
-            return {};
+            return std::unexpected(EngineError{
+                TokenizationFailed,
+                "Embed error: Failed to tokenize the input data!"
+            });
         }
 
         // embedding
 
         if (!decode_tokens(tokens, 0))
         {
-            return {};
+            return std::unexpected(EngineError{
+                DecodeFailed,
+                "Embed error: Failed to decode tokens!"
+            });
         }
 
         const int32_t embedding_dim = llama_model_n_embd(m_model.get());
+        if (embedding_dim <= 0)
+        {
+            return std::unexpected(EngineError{
+                EmbeddingsExtractionFailed,
+                "Embed error: Model reports invalid embedding dimension (engine or model inconsistency)!"
+            });
+        }
+
         std::vector<float> embedding(embedding_dim);
 
         const auto* last_embedding = llama_get_embeddings_ith(m_context.get(), static_cast<int32_t>(tokens.size()) - 1);
         if (last_embedding == nullptr)
         {
-            std::cerr << "Embed error: Cannot get the embedding!" << '\n';
-            return {};
+            return std::unexpected(EngineError{
+                EmbeddingsExtractionFailed,
+                "Embed error: Cannot extract the embedding!"
+            });
         }
         std::copy(last_embedding, last_embedding + embedding_dim, embedding.begin());
 

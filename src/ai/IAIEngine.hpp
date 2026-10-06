@@ -22,7 +22,8 @@ namespace f1_pulse::ai {
         TokenizationFailed,    ///< The backend failed to tokenize the input (e.g. vocabulary not loaded or input too long).
         DecodeFailed,          ///< llama_decode() returned a non-zero status during prefill or generation.
         ContextOverflow,       ///< The number of tokens in the request exceeds the context size allocated at init().
-        EmbeddingsDisabled     ///< embed() was called but EngineConfig::enable_embeddings was false at init().
+        EmbeddingsDisabled,     ///< embed() was called but EngineConfig::enable_embeddings was false at init().
+        EmbeddingsExtractionFailed
     };
 
     /// @brief Carries a machine-readable error category and a human-readable
