@@ -56,11 +56,6 @@ namespace f1_pulse::ai
 
     auto LlamaEngine::tokenize(std::string_view text, bool add_special) const -> std::vector<llama_token>
     {
-        if (!is_ready() || text.empty())
-        {
-            return {};
-        }
-
         const auto* vocab = llama_model_get_vocab(m_model.get());
         const auto text_size = static_cast<int32_t>(text.size());
 
@@ -74,7 +69,7 @@ namespace f1_pulse::ai
         std::vector<llama_token> tokens(tokens_count);
         int32_t result = llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, false);
 
-        if (result < 0)
+        if (result < 0 || result != tokens_count)
         {
             return {};
         }
@@ -112,7 +107,6 @@ namespace f1_pulse::ai
         const int32_t decode_status = llama_decode(m_context.get(), batch);
         if (decode_status != 0)
         {
-            std::cerr << "Decode error: llama_decode failed, error code - " << decode_status << "!\n";
             return false;
         }
 
@@ -133,7 +127,7 @@ namespace f1_pulse::ai
         if (config.model_path.empty())
         {
             return std::unexpected(EngineError{
-                ModelPathFindFailed, 
+                ModelFileNotFound, 
                 "Model path is empty!"
             });
         }
@@ -141,7 +135,7 @@ namespace f1_pulse::ai
         if (!std::filesystem::is_regular_file(config.model_path))
         {
             return std::unexpected(EngineError{
-                ModelPathFindFailed, 
+                ModelFileNotFound, 
                 "Model file not found or it's not a regular file!"
             });
         }
@@ -160,7 +154,6 @@ namespace f1_pulse::ai
         unique_model_ptr model(llama_model_load_from_file(config.model_path.string().c_str(), model_params));
         if (!model)
         {
-            std::cerr << "Failed to load GGUF model from: " << config.model_path.string() << '\n';
             return std::unexpected(EngineError{
                 ModelLoadFailed, 
                 "Failed to load GGUF model from " + config.model_path.string()
@@ -186,7 +179,6 @@ namespace f1_pulse::ai
         unique_context_ptr context(llama_init_from_model(model.get(), context_params));
         if (!context)
         {
-            std::cerr << "Failed to create llama_context for model: " << config.model_path.string() << '\n';
             return std::unexpected(EngineError{
                 ContextCreationFailed,
                 "Failed to create llama_context for model: " + config.model_path.string()

@@ -13,17 +13,17 @@
 namespace f1_pulse::ai {
     /// @brief Identifies the category of failure for any engine operation.
     enum class EngineErrorCode {
-        AlreadyInitialized,    ///< init() was called on an engine that is already initialized.
-        ModelFileNotFound,     ///< The model file could not be located at the path specified in EngineConfig::model_path.
-        ModelLoadFailed,       ///< The model file was found but could not be loaded (corrupt, unsupported format, or insufficient memory).
-        ContextCreationFailed, ///< The backend failed to create a context with the requested parameters (e.g. context_size too large for available VRAM).
-        EmptyInput,            ///< The prompt or input data passed to embed() or infer() was empty.
-        NotInitialized,        ///< embed() or infer() was called before a successful init().
-        TokenizationFailed,    ///< The backend failed to tokenize the input (e.g. vocabulary not loaded or input too long).
-        DecodeFailed,          ///< llama_decode() returned a non-zero status during prefill or generation.
-        ContextOverflow,       ///< The number of tokens in the request exceeds the context size allocated at init().
-        EmbeddingsDisabled,     ///< embed() was called but EngineConfig::enable_embeddings was false at init().
-        EmbeddingsExtractionFailed
+        AlreadyInitialized,          ///< init() was called on an engine that is already initialized.
+        ModelFileNotFound,           ///< The model file could not be located at the path specified in EngineConfig::model_path.
+        ModelLoadFailed,             ///< The model file was found but could not be loaded (corrupt, unsupported format, or insufficient memory).
+        ContextCreationFailed,       ///< The backend failed to create a context with the requested parameters (e.g. context_size too large for available VRAM).
+        EmptyInput,                  ///< The prompt or input data passed to embed() or infer() was empty.
+        NotInitialized,              ///< embed() or infer() was called before a successful init().
+        TokenizationFailed,          ///< The backend failed to tokenize the input (e.g. vocabulary not loaded or input too long).
+        DecodeFailed,                ///< llama_decode() returned a non-zero status during prefill or generation.
+        ContextOverflow,             ///< The number of tokens in the request exceeds the context size allocated at init().
+        EmbeddingsDisabled,          ///< embed() was called but EngineConfig::enable_embeddings was false at init().
+        EmbeddingsExtractionFailed   ///< The backend decoded the input but could not return an embedding (e.g. invalid embedding dimension or missing data at the requested position).
     };
 
     /// @brief Carries a machine-readable error category and a human-readable

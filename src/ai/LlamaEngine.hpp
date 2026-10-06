@@ -50,6 +50,11 @@ namespace f1_pulse::ai {
         auto is_ready() const noexcept -> bool override;
 
     private:
+        /// @brief Converts `text` into model tokens. Special-token markers in `text`
+        /// are not parsed, only `add_special` BOS/EOS handling applies.
+        /// @return The tokens, or an empty vector on failure.
+        /// @note Unchecked: the caller must ensure the engine is ready and `text` is
+        /// non-empty, and must hold the engine mutex.
         auto tokenize(std::string_view text, bool add_special = true) const -> std::vector<llama_token>;
 
         /// @brief Submits `tokens` to the context for decoding (prefill or a single
