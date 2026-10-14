@@ -9,71 +9,18 @@
 #include <stdexcept>
 #include <string>
 
-namespace 
-{
+namespace {
     /// @brief
-    enum StopReason
-    {
+    enum StopReason {
         EndOfGeneration,
         MaxTokens,
         StopSequence,
         Cancelled,
         DecodeFailed
     };
-
-    /// @brief Returns the offset in `text` where the earliest matching stop
-    /// sequence begins, or std::nullopt if none of `stop_sequences` occur yet.
-    auto find_stop_sequence(std::string_view text, const std::vector<std::string>& stop_sequences) -> std::optional<size_t>
-    {
-        std::optional<size_t> earliest;
-
-        for (const auto& stop : stop_sequences)
-        {
-            if (stop.empty())
-            {
-                continue;
-            }
-
-            if (const auto pos = text.find(stop); pos != std::string_view::npos)
-            {
-                earliest = earliest ? std::min(*earliest, pos) : pos;
-            }
-        }
-
-        return earliest;
-    }
-
-    /// @brief
-    auto valid_utf8_prefix_length(std::string_view buffer) -> size_t
-    {
-        const size_t size = buffer.size();
-        const size_t limit = std::min<size_t>(4, size);
-
-        for (size_t back = 1; back <= limit; ++back)
-        {
-            const size_t i = size - back;
-            const auto b = static_cast<unsigned char>(buffer[i]);
-
-            if ((b & 0xC0) == 0x80)
-            {
-                continue;
-            }
-
-            size_t expected = 0;
-            if ((b & 0xF8) == 0xF0) { expected = 4; }
-            else if ((b & 0xF0) == 0xE0) { expected = 3; }
-            else if ((b & 0xE0) == 0xC0) { expected = 2; }
-            else { expected = 1; } // ASCII or invalid lead byte: treat as complete, never stall the stream
-
-            return (back < expected) ? i : size;
-        }
-
-        return size;
-    }
 } // namespace
 
-namespace f1_pulse::ai 
-{
+namespace f1_pulse::ai {
     using enum EngineErrorCode;
 
     void ModelCleaner::operator() (llama_model* model) const noexcept
