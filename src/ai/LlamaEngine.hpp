@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <span>
 
 struct llama_model;
 struct llama_context;
@@ -61,7 +62,7 @@ namespace f1_pulse::ai {
         /// generation step), starting at KV-cache position `start_pos`. Only the
         /// logits of the last token in the batch are requested. Owns and frees its
         /// llama_batch internally (RAII), so it is safe to call on any error path.
-        auto decode_tokens(const std::vector<llama_token>& tokens, int32_t start_pos) const -> bool;
+        auto decode_tokens(std::span<const llama_token> tokens, int32_t start_pos) const -> bool;
 
         mutable std::mutex m_mutex;
         std::atomic<bool> m_ready{false};
