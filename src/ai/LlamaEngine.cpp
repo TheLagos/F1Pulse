@@ -227,6 +227,17 @@ namespace f1_pulse::ai
                 "Embed error: Failed to tokenize the input data!"});
         }
 
+        const auto limit = std::min(
+            static_cast<std::size_t>(llama_n_ctx(m_context.get())),
+            static_cast<std::size_t>(llama_n_batch(m_context.get())));
+
+        if (tokens.size() > limit)
+        {
+            return std::unexpected(EngineError{
+                ContextOverflow,
+                "Embed error: input (" + std::to_string(tokens.size()) + " tokens) exceeds limit (" + std::to_string(limit) + ")"});
+        }
+
         // embedding
 
         if (!decode_tokens(tokens, 0))
@@ -245,15 +256,24 @@ namespace f1_pulse::ai
         }
 
         std::vector<float> embedding(embedding_dim);
+        const float *embeddings = nullptr;
 
-        const auto *last_embedding = llama_get_embeddings_ith(m_context.get(), static_cast<int32_t>(tokens.size()) - 1);
-        if (last_embedding == nullptr)
+        if (llama_pooling_type(m_context.get()) == LLAMA_POOLING_TYPE_NONE)
+        {
+            embeddings = llama_get_embeddings_ith(m_context.get(), static_cast<int32_t>(tokens.size()) - 1);
+        }
+        else
+        { // pooled: one vector per sequence, seq id 0
+            embeddings = llama_get_embeddings_seq(m_context.get(), 0);
+        }
+
+        if (embeddings == nullptr)
         {
             return std::unexpected(EngineError{
                 EmbeddingsExtractionFailed,
                 "Embed error: Cannot extract the embedding!"});
         }
-        std::copy(last_embedding, last_embedding + embedding_dim, embedding.begin());
+        std::copy(embeddings, embeddings + embedding_dim, embedding.begin());
 
         return embedding;
     }
