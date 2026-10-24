@@ -19,85 +19,85 @@ namespace ai = f1_pulse::ai;
 
 namespace
 {
-    /// Thread-safe queue: the generation thread pushes events, the main thread pops them.
-    class EventQueue
+/// Thread-safe queue: the generation thread pushes events, the main thread pops them.
+class EventQueue
+{
+  public:
+    void push(ai::GenerationEvent event)
     {
-    public:
-        void push(ai::GenerationEvent event)
         {
-            {
-                std::lock_guard lock(m_mutex);
-                m_events.push(std::move(event));
-            }
-            m_cv.notify_one();
+            std::lock_guard lock(m_mutex);
+            m_events.push(std::move(event));
         }
-
-        auto pop() -> ai::GenerationEvent
-        {
-            std::unique_lock lock(m_mutex);
-            m_cv.wait(lock, [this] { return !m_events.empty(); });
-            auto event = std::move(m_events.front());
-            m_events.pop();
-            return event;
-        }
-
-    private:
-        std::mutex m_mutex;
-        std::condition_variable m_cv;
-        std::queue<ai::GenerationEvent> m_events;
-    };
-
-    /// Llama 3.x chat template. BOS is NOT written here: tokenize(add_special = true) adds it.
-    auto build_llama3_prompt(const std::string& user_message) -> std::string
-    {
-        return "<|start_header_id|>system<|end_header_id|>\n\n"
-               "You are Rookie, a concise and helpful assistant.<|eot_id|>"
-               "<|start_header_id|>user<|end_header_id|>\n\n" +
-               user_message +
-               "<|eot_id|>"
-               "<|start_header_id|>assistant<|end_header_id|>\n\n";
+        m_cv.notify_one();
     }
 
-    /// Prints events until a terminal one (Done / Cancelled / Failed) arrives.
-    auto print_events(EventQueue& queue) -> void
+    auto pop() -> ai::GenerationEvent
     {
-        while (true)
-        {
-            const auto event = queue.pop();
-
-            if (const auto* chunk = std::get_if<ai::TextChunk>(&event))
-            {
-                std::cout << chunk->text << std::flush;
-            }
-            else if (std::holds_alternative<ai::Done>(event))
-            {
-                std::cout << "\n";
-                return;
-            }
-            else if (std::holds_alternative<ai::Cancelled>(event))
-            {
-                std::cout << "\n[cancelled]\n";
-                return;
-            }
-            else if (const auto* failed = std::get_if<ai::Failed>(&event))
-            {
-                std::cout << "\n[error] " << failed->error.message << "\n";
-                return;
-            }
-        }
+        std::unique_lock lock(m_mutex);
+        m_cv.wait(lock, [this] { return !m_events.empty(); });
+        auto event = std::move(m_events.front());
+        m_events.pop();
+        return event;
     }
 
-    auto default_model_path() -> std::filesystem::path
+  private:
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::queue<ai::GenerationEvent> m_events;
+};
+
+/// Llama 3.x chat template. BOS is NOT written here: tokenize(add_special = true) adds it.
+auto build_llama3_prompt(const std::string& user_message) -> std::string
+{
+    return "<|start_header_id|>system<|end_header_id|>\n\n"
+           "You are Rookie, a concise and helpful assistant.<|eot_id|>"
+           "<|start_header_id|>user<|end_header_id|>\n\n" +
+           user_message +
+           "<|eot_id|>"
+           "<|start_header_id|>assistant<|end_header_id|>\n\n";
+}
+
+/// Prints events until a terminal one (Done / Cancelled / Failed) arrives.
+auto print_events(EventQueue& queue) -> void
+{
+    while (true)
     {
+        const auto event = queue.pop();
+
+        if (const auto* chunk = std::get_if<ai::TextChunk>(&event))
+        {
+            std::cout << chunk->text << std::flush;
+        }
+        else if (std::holds_alternative<ai::Done>(event))
+        {
+            std::cout << "\n";
+            return;
+        }
+        else if (std::holds_alternative<ai::Cancelled>(event))
+        {
+            std::cout << "\n[cancelled]\n";
+            return;
+        }
+        else if (const auto* failed = std::get_if<ai::Failed>(&event))
+        {
+            std::cout << "\n[error] " << failed->error.message << "\n";
+            return;
+        }
+    }
+}
+
+auto default_model_path() -> std::filesystem::path
+{
 #ifdef _WIN32
-        char buf[MAX_PATH];
-        GetModuleFileNameA(nullptr, buf, MAX_PATH);
-        const auto exe_dir = std::filesystem::path(buf).parent_path();
+    char buf[MAX_PATH];
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    const auto exe_dir = std::filesystem::path(buf).parent_path();
 #else
-        const auto exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
+    const auto exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
 #endif
-        return exe_dir.parent_path() / "model" / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf";
-    }
+    return exe_dir.parent_path() / "model" / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf";
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -144,13 +144,8 @@ int main(int argc, char** argv)
 
         // Declared last: destroyed first, so the thread is joined before queue/prompt die.
         std::jthread worker(
-            [&](std::stop_token stoken)
-            {
-                engine.infer(
-                    prompt,
-                    [&queue](const ai::GenerationEvent& event) { queue.push(event); },
-                    stoken,
-                    params);
+            [&](std::stop_token stoken) {
+                engine.infer(prompt, [&queue](const ai::GenerationEvent& event) { queue.push(event); }, stoken, params);
             });
 
         std::cout << "Rookie >> ";
