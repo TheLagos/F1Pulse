@@ -18,7 +18,7 @@
       "name": "windows-msvc-base",
       "hidden": true,
       "inherits": "base",
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
       "architecture": {
         "value": "x64",
         "strategy": "set"
