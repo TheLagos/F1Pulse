@@ -156,3 +156,6 @@ $RECYCLE.BIN/
 
 # AI GGUF File
 /model/
+
+# Vulkan logs
+*.log

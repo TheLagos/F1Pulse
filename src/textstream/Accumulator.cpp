@@ -10,8 +10,8 @@ namespace
 {
 /// @brief Returns the offset in `text` where the earliest matching stop
 /// sequence begins, or std::nullopt if none of `stop_sequences` occur yet.
-auto find_stop_sequence(std::string_view text,
-                        const std::vector<std::string>& stop_sequences) -> std::optional<std::size_t>
+auto find_stop_sequence(std::string_view text, const std::vector<std::string>& stop_sequences)
+    -> std::optional<std::size_t>
 {
     std::optional<std::size_t> earliest;
 

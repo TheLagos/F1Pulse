@@ -47,7 +47,8 @@ void ContextCleaner::operator()(llama_context* context) const noexcept
     }
 }
 
-auto LlamaEngine::tokenize(std::string_view text, bool add_special, bool parse_special) const -> std::vector<llama_token>
+auto LlamaEngine::tokenize(std::string_view text, bool add_special, bool parse_special) const
+    -> std::vector<llama_token>
 {
     const auto* vocab = llama_model_get_vocab(m_model.get());
     const auto text_size = static_cast<int32_t>(text.size());
@@ -60,7 +61,8 @@ auto LlamaEngine::tokenize(std::string_view text, bool add_special, bool parse_s
     }
 
     std::vector<llama_token> tokens(tokens_count);
-    int32_t result = llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, parse_special);
+    int32_t result =
+        llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, parse_special);
 
     if (result < 0 || result != tokens_count)
     {

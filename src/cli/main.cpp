@@ -137,8 +137,10 @@ int main(int argc, char** argv)
 
         // Declared last: destroyed first, so the thread is joined before queue/prompt die.
         std::jthread worker(
-            [&](std::stop_token stoken) {
-                engine.infer(prompt, [&queue](const ai::GenerationEvent& event) { queue.push(event); }, stoken, params);
+            [&](std::stop_token stoken)
+            {
+                engine.infer(
+                    prompt, [&queue](const ai::GenerationEvent& event) { queue.push(event); }, stoken, params);
             });
 
         std::cout << "Rookie >> ";
