@@ -1,14 +1,132 @@
 {
   "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "name": "default",
-      "displayName": "Default Ninja Config",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "F1_BUILD_TESTS": "ON"
       }
+    },
+    {
+      "name": "windows-msvc-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-gcc-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "windows-msvc-cpu",
+      "displayName": "Windows MSVC, CPU",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": {
+        "F1_GPU_BACKEND": "CPU"
+      }
+    },
+    {
+      "name": "windows-msvc-vulkan",
+      "displayName": "Windows MSVC, Vulkan",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": {
+        "F1_GPU_BACKEND": "VULKAN"
+      }
+    },
+    {
+      "name": "linux-gcc-cpu",
+      "displayName": "Linux GCC, CPU",
+      "inherits": "linux-gcc-base",
+      "cacheVariables": {
+        "F1_GPU_BACKEND": "CPU"
+      }
+    },
+    {
+      "name": "linux-gcc-vulkan",
+      "displayName": "Linux GCC, Vulkan",
+      "inherits": "linux-gcc-base",
+      "cacheVariables": {
+        "F1_GPU_BACKEND": "VULKAN"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-msvc-cpu",
+      "configurePreset": "windows-msvc-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-msvc-vulkan",
+      "configurePreset": "windows-msvc-vulkan",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-gcc-cpu",
+      "configurePreset": "linux-gcc-cpu"
+    },
+    {
+      "name": "linux-gcc-vulkan",
+      "configurePreset": "linux-gcc-vulkan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-cpu",
+      "inherits": "test-base",
+      "configurePreset": "windows-msvc-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-msvc-vulkan",
+      "inherits": "test-base",
+      "configurePreset": "windows-msvc-vulkan",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-gcc-cpu",
+      "inherits": "test-base",
+      "configurePreset": "linux-gcc-cpu"
+    },
+    {
+      "name": "linux-gcc-vulkan",
+      "inherits": "test-base",
+      "configurePreset": "linux-gcc-vulkan"
     }
   ]
 }
