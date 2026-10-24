@@ -47,12 +47,12 @@ void ContextCleaner::operator()(llama_context* context) const noexcept
     }
 }
 
-auto LlamaEngine::tokenize(std::string_view text, bool add_special) const -> std::vector<llama_token>
+auto LlamaEngine::tokenize(std::string_view text, bool add_special, bool parse_special) const -> std::vector<llama_token>
 {
     const auto* vocab = llama_model_get_vocab(m_model.get());
     const auto text_size = static_cast<int32_t>(text.size());
 
-    int32_t tokens_count = llama_tokenize(vocab, text.data(), text_size, nullptr, 0, add_special, false) * -1;
+    int32_t tokens_count = llama_tokenize(vocab, text.data(), text_size, nullptr, 0, add_special, parse_special) * -1;
 
     if (tokens_count <= 0)
     {
@@ -60,7 +60,7 @@ auto LlamaEngine::tokenize(std::string_view text, bool add_special) const -> std
     }
 
     std::vector<llama_token> tokens(tokens_count);
-    int32_t result = llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, false);
+    int32_t result = llama_tokenize(vocab, text.data(), text_size, tokens.data(), tokens_count, add_special, parse_special);
 
     if (result < 0 || result != tokens_count)
     {
@@ -209,7 +209,7 @@ auto LlamaEngine::embed(std::string_view data) -> std::expected<std::vector<floa
 
     // tokenization
 
-    std::vector<llama_token> tokens = tokenize(data, true);
+    std::vector<llama_token> tokens = tokenize(data, true, false);
     if (tokens.empty())
     {
         return std::unexpected(EngineError{TokenizationFailed, "Embed error: Failed to tokenize the input data!"});
@@ -292,7 +292,7 @@ auto LlamaEngine::infer(std::string_view prompt, const CallbackFunction& callbac
     // tokenization
 
     const auto* vocab = llama_model_get_vocab(m_model.get());
-    std::vector<llama_token> tokens = tokenize(prompt, true);
+    std::vector<llama_token> tokens = tokenize(prompt, true, true);
     const auto tokens_count = static_cast<int32_t>(tokens.size());
 
     if (tokens_count <= 0)

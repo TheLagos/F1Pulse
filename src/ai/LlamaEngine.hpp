@@ -56,12 +56,17 @@ class LlamaEngine : public IAIEngine
     auto is_ready() const noexcept -> bool override;
 
   private:
-    /// @brief Converts `text` into model tokens. Special-token markers in `text`
-    /// are not parsed, only `add_special` BOS/EOS handling applies.
+    /// @brief Converts `text` into model tokens.
+    /// @param text Text to tokenize.
+    /// @param parse_special If true, special-token markers inside `text` (such as
+    /// `<|eot_id|>`) become single special tokens; if false they are tokenized as
+    /// plain text.
+    /// @param add_special If true, the model's automatic special tokens (e.g. BOS)
+    /// are added around the text.
     /// @return The tokens, or an empty vector on failure.
     /// @note Unchecked: the caller must ensure the engine is ready and `text` is
     /// non-empty, and must hold the engine mutex.
-    auto tokenize(std::string_view text, bool add_special = true) const -> std::vector<llama_token>;
+    auto tokenize(std::string_view text, bool add_special, bool parse_special) const -> std::vector<llama_token>;
 
     /// @brief Submits `tokens` to the context for decoding (prefill or a single
     /// generation step), starting at KV-cache position `start_pos`. Only the

@@ -89,14 +89,7 @@ auto print_events(EventQueue& queue) -> void
 
 auto default_model_path() -> std::filesystem::path
 {
-#ifdef _WIN32
-    char buf[MAX_PATH];
-    GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    const auto exe_dir = std::filesystem::path(buf).parent_path();
-#else
-    const auto exe_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
-#endif
-    return exe_dir.parent_path() / "model" / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf";
+    return std::filesystem::path(F1_DEFAULT_MODEL_DIR) / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf";
 }
 } // namespace
 
