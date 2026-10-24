@@ -53,6 +53,12 @@ add_subdirectory(third_party/llama.cpp)
 # ---------------------------------------------------------------------------
 if(F1_BUILD_TESTS)
     enable_testing()
+
+    # doctest single header (third_party/doctest, v2.5.3). SYSTEM: our warning
+    # flags must not report diagnostics from the vendored header.
+    add_library(f1_doctest INTERFACE)
+    add_library(doctest::doctest ALIAS f1_doctest)
+    target_include_directories(f1_doctest SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/third_party/doctest")
 endif()
 
 add_subdirectory(src)
