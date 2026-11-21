@@ -8,7 +8,6 @@
             "version": "lts"
         }
     },
-    "postCreateCommand": "npm install -g opencode-ai",
     "runArgs": [
         "--net=host",
         "-e", "DISPLAY=${env:DISPLAY}",

@@ -159,3 +159,9 @@ $RECYCLE.BIN/
 
 # Vulkan logs
 *.log
+
+# Local development workspace
+/AGENTS.md
+/AGENTS.override.md
+/.codex/
+/.agent/
