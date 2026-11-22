@@ -97,3 +97,8 @@ TEST_CASE("push after flush returns empty ready and no stop")
     CHECK(result.ready.empty());
     CHECK_FALSE(result.stop_hit);
 }
+
+TEST_CASE("CI negative gate verification")
+{
+    CHECK(false);
+}
