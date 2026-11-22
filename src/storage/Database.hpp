@@ -3,38 +3,41 @@
 #include <vector>
 #include <string>
 
-namespace f1_pulse::storage {
-    /// @brief 
-    struct DocumentNode {
-        std::string id;
-        std::string text;
-        std::vector<float> embedding;
-    };
+namespace f1_pulse::storage
+{
+/// @brief
+struct DocumentNode
+{
+    std::string id;
+    std::string text;
+    std::vector<float> embedding;
+};
 
-    /// @brief 
-    class Database {
-        private:
-            std::vector<DocumentNode> m_data;
-        
-        public:
-        Database() = default;
-        ~Database() = default;
+/// @brief
+class Database
+{
+  private:
+    std::vector<DocumentNode> m_data;
 
-        Database(const Database&) = delete;
-        Database& operator=(const Database&) = delete;
+  public:
+    Database() = default;
+    ~Database() = default;
 
-        Database(Database&&) noexcept = default;
-        Database& operator=(Database&&) noexcept = default;
+    Database(const Database&) = delete;
+    Database& operator=(const Database&) = delete;
 
-        /// @brief 
-        /// @param id 
-        /// @param text 
-        /// @param embedding 
-        void add_document(const std::string& id, const std::string& text, const std::vector<float>& embedding);
+    Database(Database&&) noexcept = default;
+    Database& operator=(Database&&) noexcept = default;
 
-        /// @brief 
-        /// @param query_vector 
-        /// @return 
-        std::string query(const std::vector<float>& query_vector);
-    };
+    /// @brief
+    /// @param id
+    /// @param text
+    /// @param embedding
+    void add_document(const std::string& id, const std::string& text, const std::vector<float>& embedding);
+
+    /// @brief
+    /// @param query_vector
+    /// @return
+    std::string query(const std::vector<float>& query_vector);
+};
 } // namespace f1_pulse::storage

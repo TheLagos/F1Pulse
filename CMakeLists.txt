@@ -1,26 +1,64 @@
 cmake_minimum_required(VERSION 3.22)
-project(F1Pulse CXX C)
 
+project(F1Pulse LANGUAGES C CXX)
+
+# The C++ standard itself is requested per target (cxx_std_23 in f1_add_module).
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(GGML_CUDA ON CACHE BOOL "Build with CUDA support" FORCE)
+# ---------------------------------------------------------------------------
+# User-facing options
+# ---------------------------------------------------------------------------
+set(F1_GPU_BACKEND "CPU" CACHE STRING "GPU backend for llama.cpp: CPU, VULKAN, CUDA or METAL")
+set_property(CACHE F1_GPU_BACKEND PROPERTY STRINGS CPU VULKAN CUDA METAL)
 
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Build llama.cpp examples" FORCE)
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Build llama.cpp tests" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build llama.cpp server" FORCE)
+option(F1_BUILD_TESTS "Build F1Pulse unit tests" OFF)
+option(F1_WARNINGS_AS_ERRORS "Treat compiler warnings in F1Pulse code as errors" OFF)
+
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+
+include(Warnings)
+include(F1Module)
+include(Backends)
+
+# ---------------------------------------------------------------------------
+# llama.cpp (third_party/llama.cpp, not modified)
+#
+# Options are set as ordinary variables, not cache entries: the submodule
+# requires CMake 3.14...3.28, so CMP0077 is NEW and option() honours them
+# without writing anything into the cache. Names verified against
+# third_party/llama.cpp/CMakeLists.txt and ggml/CMakeLists.txt.
+# ---------------------------------------------------------------------------
+
+# Link llama/ggml statically: no DLLs to copy next to f1_pulse.exe.
+set(BUILD_SHARED_LIBS OFF)
+
+set(LLAMA_BUILD_COMMON OFF)   # common/ + vendor/cpp-httplib (OpenSSL) are not needed
+set(LLAMA_BUILD_TESTS OFF)
+set(LLAMA_BUILD_TOOLS OFF)
+set(LLAMA_BUILD_EXAMPLES OFF)
+set(LLAMA_BUILD_SERVER OFF)
+set(LLAMA_BUILD_APP OFF)
+set(LLAMA_BUILD_UI OFF)       # Web UI may download a prebuilt bundle
+set(LLAMA_OPENSSL OFF)        # no HTTPS/OpenSSL dependency
+
+set(GGML_BUILD_TESTS OFF)
+set(GGML_BUILD_EXAMPLES OFF)
 
 add_subdirectory(third_party/llama.cpp)
 
-set(SOURCES
-    src/main.cpp
-    src/math/VectorMath.cpp
-    src/storage/Database.cpp
-)
+# ---------------------------------------------------------------------------
+# Project sources
+# ---------------------------------------------------------------------------
+if(F1_BUILD_TESTS)
+    enable_testing()
 
-add_executable(f1_pulse ${SOURCES})
+    # doctest single header (third_party/doctest, v2.5.3). SYSTEM: our warning
+    # flags must not report diagnostics from the vendored header.
+    add_library(f1_doctest INTERFACE)
+    add_library(doctest::doctest ALIAS f1_doctest)
+    target_include_directories(f1_doctest SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/third_party/doctest")
+endif()
 
-target_include_directories(f1_pulse PRIVATE src)
-
-target_link_libraries(f1_pulse PRIVATE llama)
-
-target_compile_features(f1_pulse PRIVATE cxx_std_20)
+add_subdirectory(src)

@@ -150,3 +150,18 @@ $RECYCLE.BIN/
 
 #Cache
 /.cache/
+
+#Clangd
+.clangd
+
+# AI GGUF File
+/model/
+
+# Vulkan logs
+*.log
+
+# Local development workspace
+/AGENTS.md
+/AGENTS.override.md
+/.codex/
+/.agent/

@@ -1,0 +1,204 @@
+name: CPU CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msvc:
+    name: CPU / Windows MSVC
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify source revisions
+        run: |
+          $revision = git rev-parse --verify HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($revision -cne $env:GITHUB_SHA) {
+            throw "Checked-out revision $revision differs from event revision $env:GITHUB_SHA."
+          }
+          Write-Host "F1Pulse revision $revision"
+
+          $expected = git rev-parse --verify HEAD:third_party/llama.cpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $submodules = git submodule status --recursive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not $submodules -or $submodules -match '^[+U-]') {
+            throw 'A submodule is uninitialized, conflicted, or differs from its gitlink.'
+          }
+          $actual = git -C third_party/llama.cpp rev-parse --verify HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($actual -cne $expected) {
+            throw "llama.cpp revision $actual differs from gitlink $expected."
+          }
+          Write-Host "llama.cpp revision $actual"
+
+      - name: Verify Windows toolchain
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $instances = & $vswhere -latest -prerelease -products '*' -version '[18.0,19.0)' `
+            -requires Microsoft.VisualStudio.Component.VC.CMake.Project -format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $vs = $instances | ConvertFrom-Json
+          if (-not $vs.installationPath) { throw 'Visual Studio 2026 with C++ tools for CMake was not found.' }
+          Write-Host "Visual Studio $($vs.installationVersion) at $($vs.installationPath)"
+
+          $cmakeBin = Join-Path $vs.installationPath 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin'
+          $cmake = Join-Path $cmakeBin 'cmake.exe'
+          $ctest = Join-Path $cmakeBin 'ctest.exe'
+          foreach ($toolPath in $cmake, $ctest) {
+            if (-not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
+              throw "Visual Studio tool is missing: $toolPath"
+            }
+            $banner = & $toolPath --version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $versionLine = @($banner)[0]
+            Write-Host "${toolPath}: $versionLine"
+            if ($versionLine -notmatch '\bversion (\d+\.\d+)' -or [version]$Matches[1] -lt [version]'4.2') {
+              throw "$toolPath must be version 4.2 or newer."
+            }
+          }
+
+          $generators = & $cmake --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($generators -match 'Visual Studio 18 2026')) {
+            throw 'CMake does not provide the Visual Studio 18 2026 generator.'
+          }
+
+          @(
+            "F1_CMAKE_EXE=$cmake"
+            "F1_CTEST_EXE=$ctest"
+            "F1_VS_INSTANCE=$($vs.installationPath)"
+          ) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure Release CPU build
+        run: '& $env:F1_CMAKE_EXE --preset windows-msvc-cpu "-DCMAKE_GENERATOR_INSTANCE=$env:F1_VS_INSTANCE"'
+
+      - name: Verify selected Visual Studio instance and MSVC compiler
+        run: |
+          $instance = Select-String -LiteralPath 'build/windows-msvc-cpu/CMakeCache.txt' `
+            -Pattern '^CMAKE_GENERATOR_INSTANCE:[^=]+=(.+)$'
+          if (-not $instance) { throw 'CMake did not record a Visual Studio instance.' }
+          $selected = $instance.Matches[0].Groups[1].Value
+          if ([IO.Path]::GetFullPath($selected) -ne [IO.Path]::GetFullPath($env:F1_VS_INSTANCE)) {
+            throw "CMake selected Visual Studio at $selected, expected $env:F1_VS_INSTANCE."
+          }
+          Write-Host "CMake selected Visual Studio at $selected"
+
+          $compiler = Select-String -Path 'build/windows-msvc-cpu/CMakeFiles/*/CMakeCXXCompiler.cmake' `
+            -Pattern '^set\(CMAKE_CXX_COMPILER(_ID|_VERSION)? '
+          $compiler.Line
+          if ($compiler.Line -cnotcontains 'set(CMAKE_CXX_COMPILER_ID "MSVC")') {
+            throw 'CMake did not select MSVC.'
+          }
+
+      - name: Build default targets
+        run: '& $env:F1_CMAKE_EXE --build --preset windows-msvc-cpu'
+
+      - name: Run CTest
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'cpu-ctest.xml'
+          & $env:F1_CTEST_EXE --preset windows-msvc-cpu --no-tests=error -V --output-junit $report
+
+      - &verify-required-ctest-result
+        name: Verify required CTest result
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'cpu-ctest.xml'
+          $reader = [System.Xml.XmlReader]::Create($report)
+          try {
+            $results = [System.Xml.XmlDocument]::new()
+            $results.Load($reader)
+          } finally {
+            $reader.Dispose()
+          }
+
+          $cases = $results.SelectNodes('/testsuite/testcase[@name="textstream.accumulator"]')
+          if ($cases.Count -ne 1 -or $cases[0].GetAttribute('status') -cne 'run' -or
+              $cases[0].SelectSingleNode('skipped | failure | error')) {
+            throw 'CTest must execute and pass textstream.accumulator exactly once.'
+          }
+          Write-Host 'Verified passing CTest result for textstream.accumulator.'
+
+  linux-gcc:
+    name: CPU / Linux GCC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify source revisions
+        run: |
+          revision=$(git rev-parse --verify HEAD)
+          if [[ "$revision" != "$GITHUB_SHA" ]]; then
+            printf 'Checked-out revision %s differs from event revision %s.\n' "$revision" "$GITHUB_SHA" >&2
+            exit 1
+          fi
+          printf 'F1Pulse revision %s\n' "$revision"
+
+          expected=$(git rev-parse --verify HEAD:third_party/llama.cpp)
+          submodules=$(git submodule status --recursive)
+          if [[ -z "$submodules" ]] || grep -q '^[+U-]' <<< "$submodules"; then
+            printf 'A submodule is uninitialized, conflicted, or differs from its gitlink.\n' >&2
+            exit 1
+          fi
+          actual=$(git -C third_party/llama.cpp rev-parse --verify HEAD)
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'llama.cpp revision %s differs from gitlink %s.\n' "$actual" "$expected" >&2
+            exit 1
+          fi
+          printf 'llama.cpp revision %s\n' "$actual"
+
+      - name: Log Linux toolchain
+        run: |
+          command -v cmake ctest ninja gcc g++
+          cmake --version
+          ctest --version
+          ninja --version
+          gcc --version
+          g++ --version
+
+      - name: Configure Release CPU build
+        run: cmake --preset linux-gcc-cpu
+
+      - name: Verify selected GCC compilers
+        run: |
+          for language in C CXX; do
+            compiler_info=(build/linux-gcc-cpu/CMakeFiles/*/"CMake${language}Compiler.cmake")
+            grep -E "^set\(CMAKE_${language}_COMPILER(_ID|_VERSION)? " "${compiler_info[@]}"
+            if ! grep -Fxq "set(CMAKE_${language}_COMPILER_ID \"GNU\")" "${compiler_info[@]}" ||
+               ! grep -Eq "^set\(CMAKE_${language}_COMPILER_VERSION \"13\." "${compiler_info[@]}"; then
+              printf 'CMake did not select GNU 13 for %s.\n' "$language" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build default targets
+        run: cmake --build --preset linux-gcc-cpu
+
+      - name: Run CTest
+        run: ctest --preset linux-gcc-cpu --no-tests=error -V --output-junit "$RUNNER_TEMP/cpu-ctest.xml"
+
+      - *verify-required-ctest-result
