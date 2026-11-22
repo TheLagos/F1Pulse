@@ -8,7 +8,7 @@
 ## 1. Sources
 
 ```sh
-git clone --recurse-submodules https://github.com/TheLagos/F1Pulse.git
+git clone --recurse-submodules --branch feature/ai-engine https://github.com/TheLagos/F1Pulse.git
 cd F1Pulse
 ```
 
@@ -140,7 +140,7 @@ CUDA and Metal can be selected with `-DF1_GPU_BACKEND=CUDA|METAL`, but they have
 | `cmake --preset <name> --fresh` | recreate the cache and `CMakeFiles/` in the selected build directory (CMake 3.24+) |
 | `cmake --build --preset <name> --parallel 8` | build with 8 jobs |
 | `cmake --build --preset <name> --verbose` | print full compiler commands |
-| `ctest --preset <name> --output-on-failure` | show output of failing tests |
+| `ctest --preset <name> --no-tests=error --output-on-failure` | fail when no tests run and show output of failing tests |
 
 ## Formatting and new modules
 
