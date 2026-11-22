@@ -5,6 +5,7 @@ on:
     branches: ['**']
   pull_request:
     branches: [develop, main]
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -79,13 +80,26 @@ jobs:
             throw 'CMake does not provide the Visual Studio 18 2026 generator.'
           }
 
-          "F1_CMAKE_EXE=$cmake", "F1_CTEST_EXE=$ctest" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          @(
+            "F1_CMAKE_EXE=$cmake"
+            "F1_CTEST_EXE=$ctest"
+            "F1_VS_INSTANCE=$($vs.installationPath)"
+          ) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Configure Release CPU build
-        run: '& $env:F1_CMAKE_EXE --preset windows-msvc-cpu'
+        run: '& $env:F1_CMAKE_EXE --preset windows-msvc-cpu "-DCMAKE_GENERATOR_INSTANCE=$env:F1_VS_INSTANCE"'
 
-      - name: Verify selected MSVC compiler
+      - name: Verify selected Visual Studio instance and MSVC compiler
         run: |
+          $instance = Select-String -LiteralPath 'build/windows-msvc-cpu/CMakeCache.txt' `
+            -Pattern '^CMAKE_GENERATOR_INSTANCE:[^=]+=(.+)$'
+          if (-not $instance) { throw 'CMake did not record a Visual Studio instance.' }
+          $selected = $instance.Matches[0].Groups[1].Value
+          if ([IO.Path]::GetFullPath($selected) -ne [IO.Path]::GetFullPath($env:F1_VS_INSTANCE)) {
+            throw "CMake selected Visual Studio at $selected, expected $env:F1_VS_INSTANCE."
+          }
+          Write-Host "CMake selected Visual Studio at $selected"
+
           $compiler = Select-String -Path 'build/windows-msvc-cpu/CMakeFiles/*/CMakeCXXCompiler.cmake' `
             -Pattern '^set\(CMAKE_CXX_COMPILER(_ID|_VERSION)? '
           $compiler.Line
@@ -97,7 +111,29 @@ jobs:
         run: '& $env:F1_CMAKE_EXE --build --preset windows-msvc-cpu'
 
       - name: Run CTest
-        run: '& $env:F1_CTEST_EXE --preset windows-msvc-cpu --no-tests=error -V'
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'cpu-ctest.xml'
+          & $env:F1_CTEST_EXE --preset windows-msvc-cpu --no-tests=error -V --output-junit $report
+
+      - &verify-required-ctest-result
+        name: Verify required CTest result
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'cpu-ctest.xml'
+          $reader = [System.Xml.XmlReader]::Create($report)
+          try {
+            $results = [System.Xml.XmlDocument]::new()
+            $results.Load($reader)
+          } finally {
+            $reader.Dispose()
+          }
+
+          $cases = $results.SelectNodes('/testsuite/testcase[@name="textstream.accumulator"]')
+          if ($cases.Count -ne 1 -or $cases[0].GetAttribute('status') -cne 'run' -or
+              $cases[0].SelectSingleNode('skipped | failure | error')) {
+            throw 'CTest must execute and pass textstream.accumulator exactly once.'
+          }
+          Write-Host 'Verified passing CTest result for textstream.accumulator.'
 
   linux-gcc:
     name: CPU / Linux GCC
@@ -163,4 +199,6 @@ jobs:
         run: cmake --build --preset linux-gcc-cpu
 
       - name: Run CTest
-        run: ctest --preset linux-gcc-cpu --no-tests=error -V
+        run: ctest --preset linux-gcc-cpu --no-tests=error -V --output-junit "$RUNNER_TEMP/cpu-ctest.xml"
+
+      - *verify-required-ctest-result
