@@ -1,0 +1,158 @@
+name: CPU CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msvc:
+    name: CPU / Windows MSVC
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify source revisions
+        run: |
+          $revision = git rev-parse --verify HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($revision -cne $env:GITHUB_SHA) {
+            throw "Checked-out revision $revision differs from event revision $env:GITHUB_SHA."
+          }
+          Write-Host "F1Pulse revision $revision"
+
+          $expected = git rev-parse --verify HEAD:third_party/llama.cpp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $submodules = git submodule status --recursive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not $submodules -or $submodules -match '^[+U-]') {
+            throw 'A submodule is uninitialized, conflicted, or differs from its gitlink.'
+          }
+          $actual = git -C third_party/llama.cpp rev-parse --verify HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($actual -cne $expected) {
+            throw "llama.cpp revision $actual differs from gitlink $expected."
+          }
+          Write-Host "llama.cpp revision $actual"
+
+      - name: Verify Windows toolchain
+        run: |
+          foreach ($tool in 'cmake', 'ctest') {
+            $toolPath = (Get-Command $tool -CommandType Application).Source
+            $banner = & $toolPath --version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $versionLine = @($banner)[0]
+            Write-Host "${toolPath}: $versionLine"
+            if ($versionLine -notmatch '\bversion (\d+\.\d+)' -or [version]$Matches[1] -lt [version]'4.2') {
+              throw "$tool 4.2 or newer is required."
+            }
+          }
+
+          $generators = cmake --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ($generators -match 'Visual Studio 18 2026')) {
+            throw 'CMake does not provide the Visual Studio 18 2026 generator.'
+          }
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $instances = & $vswhere -latest -prerelease -products '*' -version '[18.0,19.0)' -format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $vs = $instances | ConvertFrom-Json
+          if (-not $vs.installationPath) { throw 'Visual Studio 2026 was not found.' }
+          Write-Host "Visual Studio $($vs.installationVersion) at $($vs.installationPath)"
+
+      - name: Configure Release CPU build
+        run: cmake --preset windows-msvc-cpu
+
+      - name: Verify selected MSVC compiler
+        run: |
+          $compiler = Select-String -Path 'build/windows-msvc-cpu/CMakeFiles/*/CMakeCXXCompiler.cmake' `
+            -Pattern '^set\(CMAKE_CXX_COMPILER(_ID|_VERSION)? '
+          $compiler.Line
+          if ($compiler.Line -cnotcontains 'set(CMAKE_CXX_COMPILER_ID "MSVC")') {
+            throw 'CMake did not select MSVC.'
+          }
+
+      - name: Build default targets
+        run: cmake --build --preset windows-msvc-cpu
+
+      - name: Run CTest
+        run: ctest --preset windows-msvc-cpu --no-tests=error -V
+
+  linux-gcc:
+    name: CPU / Linux GCC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify source revisions
+        run: |
+          revision=$(git rev-parse --verify HEAD)
+          if [[ "$revision" != "$GITHUB_SHA" ]]; then
+            printf 'Checked-out revision %s differs from event revision %s.\n' "$revision" "$GITHUB_SHA" >&2
+            exit 1
+          fi
+          printf 'F1Pulse revision %s\n' "$revision"
+
+          expected=$(git rev-parse --verify HEAD:third_party/llama.cpp)
+          submodules=$(git submodule status --recursive)
+          if [[ -z "$submodules" ]] || grep -q '^[+U-]' <<< "$submodules"; then
+            printf 'A submodule is uninitialized, conflicted, or differs from its gitlink.\n' >&2
+            exit 1
+          fi
+          actual=$(git -C third_party/llama.cpp rev-parse --verify HEAD)
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'llama.cpp revision %s differs from gitlink %s.\n' "$actual" "$expected" >&2
+            exit 1
+          fi
+          printf 'llama.cpp revision %s\n' "$actual"
+
+      - name: Log Linux toolchain
+        run: |
+          command -v cmake ctest ninja gcc g++
+          cmake --version
+          ctest --version
+          ninja --version
+          gcc --version
+          g++ --version
+
+      - name: Configure Release CPU build
+        run: cmake --preset linux-gcc-cpu
+
+      - name: Verify selected GCC compilers
+        run: |
+          for language in C CXX; do
+            compiler_info=(build/linux-gcc-cpu/CMakeFiles/*/"CMake${language}Compiler.cmake")
+            grep -E "^set\(CMAKE_${language}_COMPILER(_ID|_VERSION)? " "${compiler_info[@]}"
+            if ! grep -Fxq "set(CMAKE_${language}_COMPILER_ID \"GNU\")" "${compiler_info[@]}" ||
+               ! grep -Eq "^set\(CMAKE_${language}_COMPILER_VERSION \"13\." "${compiler_info[@]}"; then
+              printf 'CMake did not select GNU 13 for %s.\n' "$language" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build default targets
+        run: cmake --build --preset linux-gcc-cpu
+
+      - name: Run CTest
+        run: ctest --preset linux-gcc-cpu --no-tests=error -V
