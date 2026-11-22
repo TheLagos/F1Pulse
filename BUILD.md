@@ -53,6 +53,25 @@ cmake --build --preset linux-gcc-cpu
 ctest --preset linux-gcc-cpu --no-tests=error -V
 ```
 
+### GitHub Actions
+
+The [CPU CI workflow](.github/workflows/cpu-ci.yml) runs on all branch pushes and on pull requests targeting `develop` or `main`. Pull request jobs build GitHub's test merge commit.
+
+| Check | GitHub-hosted runner | CPU preset |
+|---|---|---|
+| `CPU / Windows MSVC` | `windows-2025-vs2026` | `windows-msvc-cpu` |
+| `CPU / Linux GCC` | `ubuntu-24.04` | `linux-gcc-cpu` |
+
+The jobs run independently and use tools preinstalled on their runners. Each verifies the event revision and the llama.cpp submodule against the checked-out gitlink, then configures, builds all default Release targets, and runs the CPU tests. CTest fails when the test selection is empty. Use the platform commands above to reproduce the build and test locally.
+
+On Windows, CI uses `vswhere` to locate Visual Studio 2026 with C++ tools for CMake, then runs that installation's bundled CMake and CTest by absolute path. Both tools must be at least 4.2, and CMake must provide the `Visual Studio 18 2026` generator. If tool discovery fails, check the runner image and the tool paths and versions in **Verify Windows toolchain**. On Linux, check **Log Linux toolchain** and **Verify selected GCC compilers** for the installed tools and the C and C++ compiler paths selected by CMake. Both compilers must be GCC 13.
+
+#### Merge gate
+
+After both checks pass on GitHub, the repository owner requires them from GitHub Actions on `develop` and on `main` once it exists. Require a pull request, block force pushes, leave routine bypass disabled for all roles, and require zero human approvals. Enable up-to-date checks if compatible with the integration flow.
+
+Verify that an up-to-date integration PR is eligible to merge with both checks passing. For the negative case, the owner creates a disposable branch from the CI-enabled candidate, makes one unit test fail, and opens a PR to the same protected branch. Confirm GitHub blocks the merge because of the failing required check. Record the PR and run links and the tested revisions for both cases. Close the disposable PR without merging it and delete its branch.
+
 ## 3. Run the console with a model
 
 Download a chat-tuned GGUF model from Hugging Face and put it in `model/`. The default is **Meta-Llama-3.1-8B-Instruct, Q4_K_M** (about 5 GB).
