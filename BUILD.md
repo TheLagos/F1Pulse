@@ -20,7 +20,7 @@ Both CPU presets build Release binaries with project tests enabled (`F1_BUILD_TE
 
 The presets use `build/windows-msvc-cpu` and `build/linux-gcc-cpu`, respectively. Give Windows, WSL2, and container builds separate build directories so each CMake cache records the correct compiler, generator, and paths.
 
-CTest's `--no-tests=error` option requires CTest 3.26 or newer and fails when no tests are registered. Expect one CTest test, `textstream.accumulator`. With `-V`, its output shows seven doctest cases.
+CTest's `--no-tests=error` option fails when no tests are registered. Expect one CTest test, `textstream.accumulator`. With `-V`, its output shows seven doctest cases.
 
 ### Windows
 
